@@ -1,3 +1,4 @@
+import math
 import os
 from collections import defaultdict
 from multiprocessing import Pool
@@ -24,15 +25,19 @@ def preprocess_images(args, image_path, cache=True, to_features=True, device=-1,
     if not to_features:
         return load_images(image_path, num_workers=num_workers)
     else:
-        if (cache_path).is_file():
+        if cache_path.is_file():
             print("Loading Image Cache")
             with open(str(cache_path.resolve()), 'rb') as f:
                 image_vectors = pickle.load(f)
         else:
-            print("Loading Image Files")
-            images = load_images(image_path, num_workers=num_workers)
-            print("Building Image Cache")
-            image_vectors = extract_features(args, images, device=device, num_workers=num_workers)
+            print("Loading Image Files and Building Image Cache")
+            episode_paths = list(image_path.glob('*'))
+            image_vectors = {}
+            for e in tqdm(episode_paths, desc='Episode'):
+                shot_paths = list(e.glob('*/*'))  # episode/scene/shot
+                images = load_images(shot_paths, num_workers=num_workers)
+                image_vectors_chunk = extract_features(args, images, device=device, num_workers=num_workers)
+                image_vectors = {**image_vectors, **image_vectors_chunk}
             image_vectors = merge_scene_features(image_vectors)
 
             print("Saving Image Cache")
@@ -43,11 +48,13 @@ def preprocess_images(args, image_path, cache=True, to_features=True, device=-1,
         return image_vectors
 
 
-def load_images(image_path, num_workers=1):
-    shot_paths = list(image_path.glob('*/*/*'))  # episode/scene/shot
+def load_images(shot_paths, num_workers=1):
     images = {}
-    with Pool(num_workers) as p:
-        images = list(tqdm(p.imap(load_image, shot_paths), total=len(shot_paths)))
+    if num_workers < 2:
+        images = list(tqdm(map(load_image, shot_paths), total=len(shot_paths), desc='loading images'))
+    else:
+        with Pool(num_workers) as p:
+            images = list(tqdm(p.imap(load_image, shot_paths), total=len(shot_paths), desc='loading images'))
     images = {k: v for k, v in images}
 
     return images
@@ -88,14 +95,15 @@ def extract_features(args, images, device=-1, num_workers=1):
     delimiter = '/'
     # flatten images
     images = {"{}{}{}".format(vid, delimiter, name): image for vid, shots in images.items() for name, image in shots.items()}
-    print("Extracting feature for {} images".format(len(images)))
+    # print("Extracting feature for {} images".format(len(images)))
 
     dataset = ObjectDataset(images, transform=transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ]))
+    batch_size = 384
     dataloader = utils.data.DataLoader(dataset,
-                                       batch_size=384,
+                                       batch_size=batch_size,
                                        shuffle=False,
                                        num_workers=num_workers)
 
@@ -103,9 +111,9 @@ def extract_features(args, images, device=-1, num_workers=1):
     model.eval()
 
     images = {}
-    print("Extracting Features")
+    # print("Extracting Features")
     with torch.no_grad():
-        for i, data in tqdm(enumerate(dataloader)):
+        for i, data in tqdm(enumerate(dataloader), total=math.ceil(len(dataset) / batch_size), desc='extracting features'):
             keys, tensor = data
             tensor = tensor.to(device)
 
@@ -153,7 +161,7 @@ def get_empty_image_vector(sample_image_size=[]):
 
 
 def get_model(device):
-    print("Using Resnet18")
+    # print("Using Resnet18")
     model = models.resnet18(pretrained=True)
     extractor = nn.Sequential(*list(model.children())[:-2])
     extractor.to(device)

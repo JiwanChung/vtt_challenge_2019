@@ -35,8 +35,7 @@ def preprocess_images(args, image_path, cache=True, to_features=True, device=-1,
             image_vectors = {}
             for e in tqdm(episode_paths, desc='Episode'):
                 shot_paths = list(e.glob('*/*'))  # episode/scene/shot
-                images = load_images(shot_paths, num_workers=num_workers)
-                image_vectors_chunk = extract_features(args, images, device=device, num_workers=num_workers)
+                image_vectors_chunk = load_and_extract(shot_paths, args, device, num_workers)
                 image_vectors = {**image_vectors, **image_vectors_chunk}
             image_vectors = merge_scene_features(image_vectors)
 
@@ -46,6 +45,12 @@ def preprocess_images(args, image_path, cache=True, to_features=True, device=-1,
                     pickle.dump(image_vectors, f)
 
         return image_vectors
+
+
+def load_and_extract(shot_paths, args, device, num_workers=-1):
+    images = load_images(shot_paths, num_workers=num_workers)
+    image_vectors_chunk = extract_features(args, images, device=device, num_workers=num_workers, extractor_batch_size=args.extractor_batch_size)
+    return image_vectors_chunk
 
 
 def load_images(shot_paths, num_workers=1):
@@ -91,7 +96,7 @@ class ObjectDataset(VisionDataset):
         return len(self.images)
 
 
-def extract_features(args, images, device=-1, num_workers=1):
+def extract_features(args, images, device=-1, num_workers=1, extractor_batch_size=384):
     delimiter = '/'
     # flatten images
     images = {"{}{}{}".format(vid, delimiter, name): image for vid, shots in images.items() for name, image in shots.items()}
@@ -101,9 +106,8 @@ def extract_features(args, images, device=-1, num_workers=1):
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ]))
-    batch_size = 384
     dataloader = utils.data.DataLoader(dataset,
-                                       batch_size=batch_size,
+                                       batch_size=extractor_batch_size,
                                        shuffle=False,
                                        num_workers=num_workers)
 
@@ -113,7 +117,7 @@ def extract_features(args, images, device=-1, num_workers=1):
     images = {}
     # print("Extracting Features")
     with torch.no_grad():
-        for i, data in tqdm(enumerate(dataloader), total=math.ceil(len(dataset) / batch_size), desc='extracting features'):
+        for i, data in tqdm(enumerate(dataloader), total=math.ceil(len(dataset) / extractor_batch_size), desc='extracting features'):
             keys, tensor = data
             tensor = tensor.to(device)
 

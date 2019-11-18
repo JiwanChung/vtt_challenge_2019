@@ -1,5 +1,6 @@
 config = {
     'multichoice': True,
+    'extractor_batch_size': 384,
     'model_name': 'multi_choice',
     'log_path': 'data/log',
     'tokenizer': 'nltk',

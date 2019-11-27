@@ -13,43 +13,56 @@ fusion with linear layer
 
 
 class MultiChoice(nn.Module):
-    def __init__(self, vocab, n_dim, image_dim, layers, dropout, num_choice=5):
+    def __init__(self, args, vocab, n_dim, image_dim, layers, dropout, num_choice=5):
         super().__init__()
+
+        self.text_feature_names = args.text_feature_names
+        self.feature_names = args.use_inputs
 
         self.vocab = vocab
         V = len(vocab)
         D = n_dim
         self.text_embedder = nn.Embedding(V, D)
-        self.image_encoder = MLP(image_dim)
-        self.image_fuser = Fuser(D, image_dim, D)
-        self.description_fuser = Fuser(D, D, D)
-        self.subtitle_fuser = Fuser(D, D, D)
         self.question_encoder = Encoder(D, layers, dropout)
-        self.description_encoder = Encoder(D, layers, dropout)
-        self.subtitle_encoder = Encoder(D, layers, dropout)
         self.decoder = Decoder(D, layers, dropout)
         self.answer_fuser = Fuser(D, D, D)
 
+        self.feature_encoders = nn.ModuleDict()
+        self.feature_fusers = nn.ModuleDict()
+        for name in self.feature_names:
+            if name == 'images':
+                encoder = MLP(image_dim)
+            else:
+                encoder = Encoder(D, layers, dropout)
+            self.feature_encoders[name] = encoder
+
+            if name == 'images':
+                fuser = Fuser(D, image_dim, D)
+            else:
+                fuser = Fuser(D, D, D)
+            self.feature_fusers[name] = fuser
+
     @classmethod
     def resolve_args(cls, args, vocab):
-        return cls(vocab, args.n_dim, args.image_dim, args.layers, args.dropout)
+        return cls(args, vocab, args.n_dim, args.image_dim, args.layers, args.dropout)
 
-    def forward(self, que, images, answers, description, subtitle):
+    def process_feature(self, q, name, feature):
+        if name in self.text_feature_names:
+            feature = self.text_embedder(feature)
+        feature = self.feature_encoders[name](feature)
+        feature = feature.mean(dim=1)
+        q = self.feature_fusers[name](q, feature)
+        return q
+
+    def forward(self, que, answers, **features):
         q = self.text_embedder(que)
         t = self.text_embedder(answers)
-        d = self.text_embedder(description)
-        s = self.text_embedder(subtitle)
-        h = self.image_encoder(images)
         # pool
-        q, _ = self.question_encoder(q)
-        h = h.mean(dim=1)
-        _, d = self.description_encoder(d)
-        _, s = self.subtitle_encoder(s)
-        d = d.mean(dim=1)
-        s = s.mean(dim=1)
-        q = self.image_fuser(q, h)
-        q = self.description_fuser(q, d)
-        s = self.subtitle_fuser(q, s)
+        q = self.question_encoder(q)
+
+        for name, feature in sorted(features.items()):
+            q = self.process_feature(q, name, feature)
+
         q = q.mean(dim=1)
         o = self.answer_fuser(t, q)
         # BALC
@@ -64,10 +77,13 @@ class Encoder(nn.Module):
 
         self.rnn = nn.GRU(n_dim, n_dim, layers, batch_first=True, dropout=dropout)
 
-    def forward(self, x):
+    def run(self, x):
         output, hn = self.rnn(x)
         hn = hn.transpose(0, 1)
         return output, hn
+
+    def forward(self, x):
+        return self.run(x)[1]
 
 
 class MLP(nn.Module):

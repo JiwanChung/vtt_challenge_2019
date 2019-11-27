@@ -6,6 +6,7 @@ config = {
     'tokenizer': 'nltk',
     'batch_sizes': (12, 12, 12),
     'lower': True,
+    'use_inputs': ['images', 'subtitle'],  # We advise not to use description for the challenge
     'cache_image_vectors': True,
     'image_path': 'data/AnotherMissOh/AnotherMissOh_images',
     'data_path': 'data/AnotherMissOh/AnotherMissOh_QA/AnotherMissOhQA_set_subtitle.jsonl',
@@ -27,7 +28,8 @@ config = {
     'metrics': [],
     'log_cmd': False,
     'ckpt_path': 'data/ckpt',
-    'ckpt_name': None
+    'ckpt_name': None,
+    'text_feature_names': ['subtitle', 'description'],
 }
 
 

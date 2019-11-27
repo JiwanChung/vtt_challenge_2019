@@ -51,7 +51,16 @@ python cli.py train
 Access the prompted tensorboard port to view basic statistics.
 At the end of every epoch, a checkpoint file will be saved on `/data/ckpt/OPTION_NAMES`
 
-Use `video_type` config option to use `'shot'` or `'scene'` type data.
+- Use `video_type` config option to use `'shot'` or `'scene'` type data.
+
+- if you want to run the code with less memory requirements, use the following flags.
+```bash
+python cli.py train --extractor_batch_size=$BATCH --num_workers=$NUM_WORKERS
+```
+
+- You can use `use_inputs` config option to change the set of inputs to use.
+The default value is `['images', 'subtitle']`.
+It is forbidden to use `description` input for the challenge.
 
 For further configurations, take a look at `startup/config.py` and
 [fire](https://github.com/google/python-fire).

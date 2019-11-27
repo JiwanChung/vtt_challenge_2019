@@ -91,8 +91,8 @@ def prepare_batch(args, batch, vocab):
         batch.answers = answers
     '''
 
-    net_input = ['que', 'images', 'answers', 'description', 'subtitle']
-    net_input = {k: getattr(batch, k) for k in net_input}
+    net_input_key = ['que', 'answers', *args.use_inputs]
+    net_input = {k: getattr(batch, k) for k in net_input_key}
 
     return net_input, ans_idx
 
